@@ -1,11 +1,30 @@
 {-# LANGUAGE StandaloneDeriving,DeriveFunctor #-}
 module Main where
 
-import GameDSL
+import GameDSL hiding (Rule,Action,Render)
+import qualified GameDSL as GameDSL (Rule,Action,Render)
 
 import Graphics.Gloss
 
-move :: Action Clickable
+import Control.Monad (guard)
+
+data Tag = Selected | Stone
+
+deriving instance Eq Tag
+deriving instance Ord Tag
+deriving instance Show Tag
+
+data Attribute = XPosition | YPosition
+
+deriving instance Eq Attribute
+deriving instance Ord Attribute
+deriving instance Show Attribute
+
+type Rule = GameDSL.Rule Tag Attribute
+type Action = GameDSL.Action Tag Attribute
+type Render = GameDSL.Render Tag Attribute
+
+move :: Rule
 move = do
     selected <- tagged Selected
     x <- get XPosition selected
@@ -20,16 +39,16 @@ move = do
         set XPosition selected tx
         set YPosition selected ty))
 
-stoneAt :: Integer -> Integer -> Action Entity
+stoneAt :: Integer -> Integer -> Query Tag Attribute Entity
 stoneAt x y = do
     stone <- tagged Stone
     x' <- get XPosition stone
     y' <- get YPosition stone
-    assert (x == x')
-    assert (y == y')
+    guard (x == x')
+    guard (y == y')
     return stone
 
-select :: Action Clickable
+select :: Rule
 select = do
     stone <- tagged Stone
     x <- get XPosition stone
@@ -39,7 +58,7 @@ select = do
         untag Selected selected
         tag Selected stone))
 
-setupBoard :: Effect ()
+setupBoard :: Action ()
 setupBoard = do
     mapM_ (uncurry newStone) (
         [(x,y) | x <- [-1,0,1], y <- [-1,0,1], not (x == 0 && y == 0)] ++
@@ -49,7 +68,7 @@ setupBoard = do
         [(x,y) | x <- [-2,-3], y <- [-1,0,1]])
     tag Selected 0
 
-newStone :: Integer -> Integer -> Effect ()
+newStone :: Integer -> Integer -> Action ()
 newStone x y = do
     stone <- new
     tag Stone stone
