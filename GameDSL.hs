@@ -56,6 +56,15 @@ tagged t = do
     entities <- asks entityMap
     for (Map.keys (Map.filter (Set.member t . propertyTags) entities))
 
+tags :: (Ord tag) => Entity -> Query tag attribute (Set tag)
+tags entity = do
+    entities <- asks entityMap
+    properties <- for (lookupList entity entities)
+    return (propertyTags properties)
+
+hasTag :: (Ord tag) => tag -> Entity -> Query tag attribute ()
+hasTag t entity = tags entity >>= guard . Set.member t
+
 get :: (Ord attribute) => attribute -> Entity -> Query tag attribute Value
 get attribute entity = do
     entities <- asks entityMap
@@ -108,18 +117,18 @@ delete entity = do
 
 set :: (Ord attribute) => attribute -> Entity -> Value -> Action tag attribute ()
 set attribute entity value = do
-    State.modify (modifyEntity entity (\(Properties tags attributes) ->
-        Properties tags (Map.insert attribute value attributes)))
+    State.modify (modifyEntity entity (\(Properties ts attributes) ->
+        Properties ts (Map.insert attribute value attributes)))
 
 untag :: (Ord tag) => tag -> Entity -> Action tag attribute ()
 untag t entity = do
-    State.modify (modifyEntity entity (\(Properties tags attributes) ->
-        Properties (Set.delete t tags) attributes))
+    State.modify (modifyEntity entity (\(Properties ts attributes) ->
+        Properties (Set.delete t ts) attributes))
 
 tag :: (Ord tag) => tag -> Entity -> Action tag attribute ()
 tag t entity = do
-    State.modify (modifyEntity entity (\(Properties tags attributes) ->
-        Properties (Set.insert t tags) attributes))
+    State.modify (modifyEntity entity (\(Properties ts attributes) ->
+        Properties (Set.insert t ts) attributes))
 
 type RunState tag attribute = ([Clickable tag attribute],GameState tag attribute)
 
