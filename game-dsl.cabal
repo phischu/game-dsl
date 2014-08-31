@@ -23,6 +23,7 @@ executable game-dsl
                        gloss,
                        pipes,
                        free,
-                       containers
+                       containers,
+                       mtl
   -- hs-source-dirs:      
   default-language:    Haskell2010
