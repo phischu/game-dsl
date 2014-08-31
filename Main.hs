@@ -3,13 +3,14 @@ module Main where
 
 import Control.Monad.Free
 import Graphics.Gloss
+import Graphics.Gloss.Interface.Pure.Game
 import Control.Monad
 import Data.Map (Map)
 import qualified Data.Map as Map (lookup,keys,filter,insert,empty,delete,adjust)
 import Data.Set (Set)
 import qualified Data.Set as Set (member,empty,delete,insert)
 import Control.Monad.State (State)
-import qualified Control.Monad.State as State (get,put,modify)
+import qualified Control.Monad.State as State (get,put,modify,execState)
 
 data Tag = Selected | Stone
 
@@ -204,8 +205,39 @@ fieldRect x y = Rect (fieldCoordinate x) (fieldCoordinate y) 40 40
 fieldCoordinate :: Integer -> Float
 fieldCoordinate x = fromIntegral x * 20
 
+runGame :: Effect () -> [Action Clickable] -> [Render] -> IO ()
+runGame setup actions renders = play
+    (InWindow "Game DSL" (500,500) (200,200))
+    white
+    40
+    (run setup actions (GameState 0 Map.empty))
+    (render renders)
+    (handle actions)
+    (const id)
+
+run :: Effect () -> [Action Clickable] -> GameState -> ([Clickable],GameState)
+run effect actions gamestate = (clickables,gamestate') where
+    gamestate' = State.execState (runEffect effect) gamestate
+    clickables = concatMap (runAction gamestate') actions
+
+render :: [Render] -> ([Clickable],GameState) -> Picture
+render renders (_,gamestate) = pictures (concatMap (runAction gamestate) renders)
+
+handle :: [Action Clickable] -> Event -> ([Clickable],GameState) -> ([Clickable],GameState)
+handle actions (EventKey (MouseButton _) _ _ (x,y)) (clickables,gamestate) = case filterInside x y clickables of
+    [] -> (clickables,gamestate)
+    (effect:_) -> run effect actions gamestate
+handle _ _ (clickables,gamestate) = (clickables,gamestate)
+
+filterInside :: Float -> Float -> [Clickable] -> [Effect ()]
+filterInside x y clickables = do
+    Clickable (Rect mx my w h) effect <- clickables
+    guard (x < mx + 0.5*w && x > mx - 0.5*w)
+    guard (y < my + 0.5*h && y > my - 0.5*h)
+    return effect
+
 main :: IO ()
-main = putStrLn "hallo"
+main = runGame setupBoard [move,select] [renderStone,renderSelected]
 
 
 
