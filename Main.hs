@@ -12,8 +12,6 @@ import qualified Data.Set as Set (member,empty,delete,insert)
 import Control.Monad.State (State)
 import qualified Control.Monad.State as State (get,put,modify,execState)
 
-import Debug.Trace (traceShow)
-
 data Tag = Selected | Stone
 
 deriving instance Eq Tag

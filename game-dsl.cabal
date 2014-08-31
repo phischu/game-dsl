@@ -21,7 +21,6 @@ executable game-dsl
   -- other-extensions:    
   build-depends:       base >=4.6 && <4.7,
                        gloss,
-                       pipes,
                        free,
                        containers,
                        mtl
