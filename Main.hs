@@ -12,15 +12,19 @@ import qualified Data.Set as Set (member,empty,delete,insert)
 import Control.Monad.State (State)
 import qualified Control.Monad.State as State (get,put,modify,execState)
 
+import Debug.Trace (traceShow)
+
 data Tag = Selected | Stone
 
 deriving instance Eq Tag
 deriving instance Ord Tag
+deriving instance Show Tag
 
 data Attribute = XPosition | YPosition
 
 deriving instance Eq Attribute
 deriving instance Ord Attribute
+deriving instance Show Attribute
 
 type Entity = Integer
 
@@ -37,7 +41,12 @@ deriving instance Functor ActionF
 
 data Clickable = Clickable Area (Effect ())
 
+instance Show Clickable where
+    show (Clickable area _) = show area
+
 data Area = Rect Float Float Float Float
+
+deriving instance Show Area
 
 type Effect = Free EffectF
 
@@ -53,6 +62,8 @@ deriving instance Functor EffectF
 type Render = Action Picture
 
 data GameState = GameState Integer (Map Entity (Set Tag,Map Attribute Integer))
+
+deriving instance Show GameState
 
 runAction :: GameState -> Action a -> [a]
 runAction _ (Pure a) = [a]
@@ -82,6 +93,7 @@ lookupList :: (Ord k) => k -> Map k v -> [v]
 lookupList k m = maybe [] (:[]) (Map.lookup k m)
 
 runEffect :: Effect a -> State GameState a
+runEffect (Pure a) = return a
 runEffect (Free f) = case f of
     New k -> do
         (GameState newentity entities) <- State.get
@@ -176,6 +188,7 @@ setupBoard = do
         [(x,y) | x <- [-1,0,1], y <- [-2,-3]] ++
         [(x,y) | x <- [2,3], y <- [-1,0,1]] ++
         [(x,y) | x <- [-2,-3], y <- [-1,0,1]])
+    tag Selected 0
 
 newStone :: Integer -> Integer -> Effect ()
 newStone x y = do
@@ -190,30 +203,33 @@ renderStone = do
     stone <- tagged Stone
     x <- get XPosition stone
     y <- get YPosition stone
-    return (translate (fieldCoordinate x) (fieldCoordinate y) (circle 20))
+    return (translate (fieldCoordinate x) (fieldCoordinate y) (circleSolid 20))
 
 renderSelected :: Render
 renderSelected = do
     selected <- tagged Selected
     x <- get XPosition selected
     y <- get YPosition selected
-    return (translate (fieldCoordinate x) (fieldCoordinate y) (rectangleWire 20 20))
+    return (translate (fieldCoordinate x) (fieldCoordinate y) (color red (circleSolid 18)))
 
 fieldRect :: Integer -> Integer -> Area
 fieldRect x y = Rect (fieldCoordinate x) (fieldCoordinate y) 40 40
 
 fieldCoordinate :: Integer -> Float
-fieldCoordinate x = fromIntegral x * 20
+fieldCoordinate x = fromIntegral x * 40
 
 runGame :: Effect () -> [Action Clickable] -> [Render] -> IO ()
 runGame setup actions renders = play
     (InWindow "Game DSL" (500,500) (200,200))
     white
     40
-    (run setup actions (GameState 0 Map.empty))
+    (run setup actions emptyState)
     (render renders)
     (handle actions)
     (const id)
+
+emptyState :: GameState
+emptyState = GameState 0 Map.empty
 
 run :: Effect () -> [Action Clickable] -> GameState -> ([Clickable],GameState)
 run effect actions gamestate = (clickables,gamestate') where
@@ -237,7 +253,7 @@ filterInside x y clickables = do
     return effect
 
 main :: IO ()
-main = runGame setupBoard [move,select] [renderStone,renderSelected]
+main = runGame setupBoard [select,move] [renderStone,renderSelected]
 
 
 
