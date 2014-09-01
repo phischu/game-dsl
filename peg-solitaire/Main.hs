@@ -1,8 +1,8 @@
 {-# LANGUAGE StandaloneDeriving,DeriveFunctor #-}
 module Main where
 
-import GameDSL hiding (Rule,Action,Render)
-import qualified GameDSL as GameDSL (Rule,Action,Render)
+import GameDSL hiding (Rule,Action)
+import qualified GameDSL as GameDSL (Rule,Action)
 
 import Graphics.Gloss
 
@@ -22,41 +22,40 @@ deriving instance Show Attribute
 
 type Rule = GameDSL.Rule Tag Attribute
 type Action = GameDSL.Action Tag Attribute
-type Render = GameDSL.Render Tag Attribute
 
 move :: Rule
 move = do
-    selected <- tagged Selected
-    x <- get XPosition selected
-    y <- get YPosition selected
+    selected <- entityTagged Selected
+    x <- getAttribute XPosition selected
+    y <- getAttribute YPosition selected
     (dx,dy) <- for [(1,0),(-1,0),(0,1),(0,-1)]
     let (nx,ny) = (x + dx, y + dy)
         (tx,ty) = (nx + dx, ny + dy)
     other <- stoneAt nx ny
     no (stoneAt tx ty)
-    return (Clickable (fieldRect tx ty) (do
+    return (trigger (fieldRect tx ty) (do
         delete other
-        set XPosition selected tx
-        set YPosition selected ty))
+        setAttribute XPosition selected tx
+        setAttribute YPosition selected ty))
 
 stoneAt :: Integer -> Integer -> Query Tag Attribute Entity
 stoneAt x y = do
-    stone <- tagged Stone
-    x' <- get XPosition stone
-    y' <- get YPosition stone
+    stone <- entityTagged Stone
+    x' <- getAttribute XPosition stone
+    y' <- getAttribute YPosition stone
     guard (x == x')
     guard (y == y')
     return stone
 
 select :: Rule
 select = do
-    stone <- tagged Stone
-    x <- get XPosition stone
-    y <- get YPosition stone
-    selected <- tagged Selected
-    return (Clickable (fieldRect x y) (do
-        untag Selected selected
-        tag Selected stone))
+    stone <- entityTagged Stone
+    x <- getAttribute XPosition stone
+    y <- getAttribute YPosition stone
+    selected <- entityTagged Selected
+    return (trigger (fieldRect x y) (do
+        setTag Selected selected False
+        setTag Selected stone True))
 
 setupBoard :: Action ()
 setupBoard = do
@@ -66,35 +65,35 @@ setupBoard = do
         [(x,y) | x <- [-1,0,1], y <- [-2,-3]] ++
         [(x,y) | x <- [2,3], y <- [-1,0,1]] ++
         [(x,y) | x <- [-2,-3], y <- [-1,0,1]])
-    tag Selected 0
+    setTag Selected 0 True
 
 newStone :: Integer -> Integer -> Action ()
 newStone x y = do
     stone <- new
-    tag Stone stone
-    set XPosition stone x
-    set YPosition stone y
+    setTag Stone stone True
+    setAttribute XPosition stone x
+    setAttribute YPosition stone y
 
 
-renderStone :: Render
+renderStone :: Rule
 renderStone = do
-    stone <- tagged Stone
-    x <- get XPosition stone
-    y <- get YPosition stone
-    return (translate (fieldCoordinate x) (fieldCoordinate y) (circleSolid 20))
+    stone <- entityTagged Stone
+    x <- getAttribute XPosition stone
+    y <- getAttribute YPosition stone
+    return (draw (translate (fieldCoordinate x) (fieldCoordinate y) (circleSolid 20)))
 
-renderSelected :: Render
+renderSelected :: Rule
 renderSelected = do
-    selected <- tagged Selected
-    x <- get XPosition selected
-    y <- get YPosition selected
-    return (translate (fieldCoordinate x) (fieldCoordinate y) (color red (circleSolid 18)))
+    selected <- entityTagged Selected
+    x <- getAttribute XPosition selected
+    y <- getAttribute YPosition selected
+    return (draw (translate (fieldCoordinate x) (fieldCoordinate y) (color red (circleSolid 18))))
 
-fieldRect :: Integer -> Integer -> Area
-fieldRect x y = Rect (fieldCoordinate x) (fieldCoordinate y) 40 40
+fieldRect :: Integer -> Integer -> Trigger
+fieldRect x y = ClickableRect (fieldCoordinate x) (fieldCoordinate y) 40 40
 
 fieldCoordinate :: Integer -> Float
 fieldCoordinate x = fromIntegral x * 40
 
 main :: IO ()
-main = runGame setupBoard [select,move] [renderStone,renderSelected]
+main = runGame setupBoard [select,move,renderStone,renderSelected]

@@ -5,24 +5,44 @@ import Graphics.Gloss
 import Graphics.Gloss.Interface.Pure.Game
 import Control.Monad
 import Data.Map (Map)
-import qualified Data.Map as Map (lookup,keys,filter,insert,empty,delete,adjust)
+import qualified Data.Map as Map (lookup,keys,insert,empty,delete,adjust)
 import Data.Set (Set)
 import qualified Data.Set as Set (member,empty,delete,insert)
 import Control.Monad.State (State,execState)
 import qualified Control.Monad.State as State (get,put,modify)
 import Control.Monad.Reader
 
-type Entity = Integer
+
 
 type Query tag attribute = ReaderT (GameState tag attribute) []
 
 type Action tag attribute = State (GameState tag attribute)
 
-data Clickable tag attribute = Clickable Area (Action tag attribute ())
+data Element tag attribute = Element {
+    elementPicture :: Picture,
+    elementTrigger :: Trigger,
+    elementAction :: Action tag attribute ()}
 
-type Rule tag attribute = Query tag attribute (Clickable tag attribute)
+draw :: Picture -> Element tag attribute
+draw picture = Element picture NoTrigger (return ())
 
-type Render tag attribute = Query tag attribute Picture
+trigger :: Trigger -> (Action tag attribute ()) -> Element tag attribute
+trigger tr action = Element blank tr action
+
+type Rule tag attribute = Query tag attribute (Element tag attribute)
+
+type Entity = Integer
+
+type Value = Integer
+
+data Trigger =
+    NoTrigger |
+    ClickableRect Float Float Float Float
+
+deriving instance Show Trigger
+
+instance Show (Element tag attribute) where
+    show (Element tr _ _) = show tr
 
 data GameState tag attribute = GameState {
     newEntity :: Entity,
@@ -34,72 +54,65 @@ data Properties tag attribute = Properties {
 
 deriving instance (Show attribute,Show tag) => Show (Properties tag attribute)
 
-type Value = Integer
-
-instance Show (Clickable tag attribute) where
-    show (Clickable area _) = show area
-
-data Area = Rect Float Float Float Float
-
-deriving instance Show Area
-
 deriving instance (Show attribute,Show tag) => Show (GameState tag attribute)
 
 runQuery :: Query tag attribute a -> GameState tag attribute ->  [a]
 runQuery = runReaderT
 
+getEntity :: Query tag attribute Entity
+getEntity = do
+    entities <- asks entityMap
+    for (Map.keys entities)
+
+getTags :: Entity -> Query tag attribute (Set tag)
+getTags entity = do
+    entities <- asks entityMap
+    properties <- lookupMZ entity entities
+    return (propertyTags properties)
+
+getTag :: (Ord tag) => tag -> Entity -> Query tag attribute Bool
+getTag t entity = do
+    tags <- getTags entity
+    return (Set.member t tags)
+
+entityTagged :: (Ord tag) => tag -> Query tag attribute Entity
+entityTagged t = do
+    entity <- getEntity
+    getTag t entity >>= guard
+    return entity
+
+getAttributes :: (Ord attribute) => Entity -> Query tag attribute (Map attribute Value)
+getAttributes entity = do
+    entities <- asks entityMap
+    properties <- lookupMZ entity entities
+    return (propertyAttributes properties)
+
+getAttribute :: (Ord attribute) => attribute -> Entity -> Query tag attribute Value
+getAttribute attribute entity = do
+    attributes <- getAttributes entity
+    lookupMZ attribute attributes
+
+lookupMZ :: (MonadPlus m,Ord k) => k -> Map k v -> m v
+lookupMZ k m = maybe mzero return (Map.lookup k m)
+
+
 for :: [a] -> Query tag attribute a
 for = lift
 
-tagged :: (Ord tag) => tag -> Query tag attribute Entity
-tagged t = do
-    entities <- asks entityMap
-    for (Map.keys (Map.filter (Set.member t . propertyTags) entities))
-
-tags :: (Ord tag) => Entity -> Query tag attribute (Set tag)
-tags entity = do
-    entities <- asks entityMap
-    properties <- for (lookupList entity entities)
-    return (propertyTags properties)
-
-hasTag :: (Ord tag) => tag -> Entity -> Query tag attribute ()
-hasTag t entity = tags entity >>= guard . Set.member t
-
-get :: (Ord attribute) => attribute -> Entity -> Query tag attribute Value
-get attribute entity = do
-    entities <- asks entityMap
-    properties <- for (lookupList entity entities)
-    for (lookupList attribute (propertyAttributes properties))
-
-gather :: Query tag attribute a -> Query tag attribute [a]
-gather query = ReaderT (\gamestate -> do
+results :: Query tag attribute a -> Query tag attribute [a]
+results query = ReaderT (\gamestate -> do
     return (runReaderT query gamestate))
 
 no :: Query tag attribute a -> Query tag attribute ()
 no query = do
-    as <- gather query
+    as <- results query
     guard (null as)
-
-lookupList :: (Ord k) => k -> Map k v -> [v]
-lookupList k m = maybe [] (:[]) (Map.lookup k m)
 
 runAction :: Action tag attribute a -> GameState tag attribute -> GameState tag attribute
 runAction = execState
-{-
-runEffect (Pure a) = return a
-runEffect (Free f) = case f of
-    New k -> do
 
-    Delete entity k -> 
-    Set attribute entity value k -> 
-    Untag t entity k -> do
-        runEffect k
-    Tag t entity k -> do
-        runEffect k
--}
 modifyEntity :: Entity -> (Properties tag attribute -> Properties tag attribute) -> GameState tag attribute -> GameState tag attribute
 modifyEntity entity f (GameState newentity entities) = GameState newentity (Map.adjust f entity entities)
-
 
 new :: Action tag attribute Entity
 new = do
@@ -115,43 +128,38 @@ delete entity = do
     (GameState newentity entities) <- State.get
     State.put (GameState newentity (Map.delete entity entities))
 
-set :: (Ord attribute) => attribute -> Entity -> Value -> Action tag attribute ()
-set attribute entity value = do
+setTag :: (Ord tag) => tag -> Entity -> Bool -> Action tag attribute ()
+setTag t entity b = do
+    State.modify (modifyEntity entity (\(Properties ts attributes) ->
+        Properties ((if b then Set.insert else Set.delete) t ts) attributes))
+
+setAttribute :: (Ord attribute) => attribute -> Entity -> Value -> Action tag attribute ()
+setAttribute attribute entity value = do
     State.modify (modifyEntity entity (\(Properties ts attributes) ->
         Properties ts (Map.insert attribute value attributes)))
 
-untag :: (Ord tag) => tag -> Entity -> Action tag attribute ()
-untag t entity = do
-    State.modify (modifyEntity entity (\(Properties ts attributes) ->
-        Properties (Set.delete t ts) attributes))
+type RunState tag attribute = ([Element tag attribute],GameState tag attribute)
 
-tag :: (Ord tag) => tag -> Entity -> Action tag attribute ()
-tag t entity = do
-    State.modify (modifyEntity entity (\(Properties ts attributes) ->
-        Properties (Set.insert t ts) attributes))
-
-type RunState tag attribute = ([Clickable tag attribute],GameState tag attribute)
-
-runGame :: Action tag attribute () -> [Rule tag attribute] -> [Render tag attribute] -> IO ()
-runGame setup actions renders = play
+runGame :: Action tag attribute () -> [Rule tag attribute] -> IO ()
+runGame setup rules = play
     (InWindow "Game DSL" (500,500) (200,200))
     white
     40
-    (run setup actions emptyGameState)
-    (render renders . snd)
-    (handle actions)
+    (run setup rules emptyGameState)
+    (render . fst)
+    (handle rules)
     (const id)
 
 emptyGameState :: GameState tag attribute
 emptyGameState = GameState 0 Map.empty
 
-run :: Action tag attribute () -> [Rule tag attribute] -> GameState tag attribute -> ([Clickable tag attribute],GameState tag attribute)
-run effect actions gamestate = (clickables,gamestate') where
-    gamestate' = runAction effect gamestate
-    clickables = concatMap (flip runQuery gamestate') actions
+run :: Action tag attribute () -> [Rule tag attribute] -> GameState tag attribute -> ([Element tag attribute],GameState tag attribute)
+run action rules gamestate = (elements,gamestate') where
+    gamestate' = runAction action gamestate
+    elements = concatMap (flip runQuery gamestate') rules
 
-render :: [Render tag attribute] -> GameState tag attribute -> Picture
-render renders gamestate = pictures (concatMap (flip runQuery gamestate) renders)
+render :: [Element tag attribute] -> Picture
+render = pictures . map elementPicture
 
 handle :: [Rule tag attribute] -> Event -> RunState tag attribute -> RunState tag attribute
 handle actions (EventKey (MouseButton _) _ _ (x,y)) (clickables,gamestate) = case filterInside x y clickables of
@@ -159,9 +167,9 @@ handle actions (EventKey (MouseButton _) _ _ (x,y)) (clickables,gamestate) = cas
     (effect:_) -> run effect actions gamestate
 handle _ _ (clickables,gamestate) = (clickables,gamestate)
 
-filterInside :: Float -> Float -> [Clickable tag attribute] -> [Action tag attribute ()]
+filterInside :: Float -> Float -> [Element tag attribute] -> [Action tag attribute ()]
 filterInside x y clickables = do
-    Clickable (Rect mx my w h) effect <- clickables
+    Element _ (ClickableRect mx my w h) action <- clickables
     guard (x < mx + 0.5*w && x > mx - 0.5*w)
     guard (y < my + 0.5*h && y > my - 0.5*h)
-    return effect
+    return action

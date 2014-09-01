@@ -1,10 +1,11 @@
 {-# LANGUAGE StandaloneDeriving,DeriveFunctor #-}
 module Main where
 
-import GameDSL hiding (Rule,Action,Render)
-import qualified GameDSL as GameDSL (Rule,Action,Render)
+import GameDSL hiding (Rule,Action)
+import qualified GameDSL as GameDSL (Rule,Action)
 
 import Graphics.Gloss
+import Control.Monad (guard)
 
 data Tag = Field | Turn | X | O
 
@@ -20,73 +21,72 @@ deriving instance Show Attribute
 
 type Rule = GameDSL.Rule Tag Attribute
 type Action = GameDSL.Action Tag Attribute
-type Render = GameDSL.Render Tag Attribute
 
 setupBoard :: Action ()
 setupBoard = do
     mapM_ (uncurry newField) [(x,y) | x <- [-1,0,1], y <- [-1,0,1]]
     turn <- new
-    tag Turn turn
-    tag X turn
+    setTag Turn turn True
+    setTag X turn True
 
 newField :: Value -> Value -> Action ()
 newField x y = do
     field <- new
-    tag Field field
-    set XPosition field x
-    set YPosition field y
+    setTag Field field True
+    setAttribute XPosition field x
+    setAttribute YPosition field y
 
 setStone :: Rule
 setStone = do
-    field <- tagged Field
-    no (hasTag X field)
-    no (hasTag O field)
-    x <- get XPosition field
-    y <- get YPosition field
-    turn <- tagged Turn
+    field <- entityTagged Field
+    getTag X field >>= guard . not
+    getTag O field >>= guard . not
+    x <- getAttribute XPosition field
+    y <- getAttribute YPosition field
+    turn <- entityTagged Turn
     player <- for [X,O]
-    hasTag player turn
-    return (Clickable (fieldRect x y) (do
-        tag player field
-        untag player turn
-        tag (other player) turn))
+    getTag player turn >>= guard
+    return (trigger (fieldRect x y) (do
+        setTag player field True
+        setTag player turn False
+        setTag (other player) turn True))
 
 other :: Tag -> Tag
 other X = O
 other O = X
 other u = u
 
-renderField :: Render
+renderField :: Rule
 renderField = do
-    field <- tagged Field
-    x <- get XPosition field
-    y <- get YPosition field
-    return (translate (fieldCoordinate x) (fieldCoordinate y) (rectangleWire 60 60))
+    field <- entityTagged Field
+    x <- getAttribute XPosition field
+    y <- getAttribute YPosition field
+    return (draw (translate (fieldCoordinate x) (fieldCoordinate y) (rectangleWire 60 60)))
 
-renderX :: Render
+renderX :: Rule
 renderX = do
-    field <- tagged Field
-    x <- get XPosition field
-    y <- get YPosition field
-    hasTag X field
-    return (translate (fieldCoordinate x) (fieldCoordinate y) cross)
+    field <- entityTagged Field
+    x <- getAttribute XPosition field
+    y <- getAttribute YPosition field
+    getTag X field >>= guard
+    return (draw (translate (fieldCoordinate x) (fieldCoordinate y) cross))
 
-renderO :: Render
+renderO :: Rule
 renderO = do
-    field <- tagged Field
-    x <- get XPosition field
-    y <- get YPosition field
-    hasTag O field
-    return (translate (fieldCoordinate x) (fieldCoordinate y) (circleSolid 25))
+    field <- entityTagged Field
+    x <- getAttribute XPosition field
+    y <- getAttribute YPosition field
+    getTag O field >>= guard
+    return (draw (translate (fieldCoordinate x) (fieldCoordinate y) (circleSolid 25)))
 
 cross :: Picture
 cross = pictures [rotate degrees (rectangleSolid 60 15) | degrees <- [-45,45]]
 
-fieldRect :: Integer -> Integer -> Area
-fieldRect x y = Rect (fieldCoordinate x) (fieldCoordinate y) 60 60
+fieldRect :: Integer -> Integer -> Trigger
+fieldRect x y = ClickableRect (fieldCoordinate x) (fieldCoordinate y) 60 60
 
 fieldCoordinate :: Integer -> Float
 fieldCoordinate x = fromIntegral x * 60
 
 main :: IO ()
-main = runGame setupBoard [setStone] [renderField,renderX,renderO]
+main = runGame setupBoard [setStone,renderField,renderX,renderO]
