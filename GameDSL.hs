@@ -20,6 +20,9 @@ data Element tag attribute = Element {
     elementPicture :: Picture,
     elementAction :: Trigger -> Action tag attribute ()}
 
+element :: Picture -> (Trigger -> Action tag attribute ()) -> Element tag attribute
+element = Element
+
 draw :: Picture -> Element tag attribute
 draw picture = Element picture (const (return ()))
 
