@@ -5,7 +5,6 @@ import GameDSL hiding (Rule,Action)
 import qualified GameDSL as GameDSL (Rule,Action)
 
 import Graphics.Gloss
-import Control.Monad (guard)
 
 data Tag = Field | Turn | X | O
 
@@ -26,30 +25,30 @@ setupBoard :: Action ()
 setupBoard = do
     mapM_ (uncurry newField) [(x,y) | x <- [-1,0,1], y <- [-1,0,1]]
     turn <- new
-    setTag Turn turn True
-    setTag X turn True
+    setTag Turn turn
+    setTag X turn
 
 newField :: Value -> Value -> Action ()
 newField x y = do
     field <- new
-    setTag Field field True
+    setTag Field field
     setAttribute XPosition field x
     setAttribute YPosition field y
 
 setStone :: Rule
 setStone = do
     field <- entityTagged Field
-    getTag X field >>= guard . not
-    getTag O field >>= guard . not
+    ensureNot (getTag X field)
+    ensureNot (getTag O field)
     x <- getAttribute XPosition field
     y <- getAttribute YPosition field
     turn <- entityTagged Turn
     player <- for [X,O]
-    getTag player turn >>= guard
+    ensure (getTag player turn)
     return (trigger (fieldRect x y) (do
-        setTag player field True
-        setTag player turn False
-        setTag (other player) turn True))
+        setTag player field
+        unsetTag player turn
+        setTag (other player) turn))
 
 other :: Tag -> Tag
 other X = O
@@ -68,7 +67,7 @@ renderX = do
     field <- entityTagged Field
     x <- getAttribute XPosition field
     y <- getAttribute YPosition field
-    getTag X field >>= guard
+    ensure (getTag X field)
     return (draw (translate (fieldCoordinate x) (fieldCoordinate y) cross))
 
 renderO :: Rule
@@ -76,7 +75,7 @@ renderO = do
     field <- entityTagged Field
     x <- getAttribute XPosition field
     y <- getAttribute YPosition field
-    getTag O field >>= guard
+    ensure (getTag O field)
     return (draw (translate (fieldCoordinate x) (fieldCoordinate y) (circleSolid 25)))
 
 cross :: Picture

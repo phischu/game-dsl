@@ -32,7 +32,7 @@ move = do
     let (nx,ny) = (x + dx, y + dy)
         (tx,ty) = (nx + dx, ny + dy)
     other <- stoneAt nx ny
-    no (stoneAt tx ty)
+    ensureNot (stoneAt tx ty)
     return (trigger (fieldRect tx ty) (do
         delete other
         setAttribute XPosition selected tx
@@ -54,8 +54,8 @@ select = do
     y <- getAttribute YPosition stone
     selected <- entityTagged Selected
     return (trigger (fieldRect x y) (do
-        setTag Selected selected False
-        setTag Selected stone True))
+        unsetTag Selected selected
+        setTag Selected stone))
 
 setupBoard :: Action ()
 setupBoard = do
@@ -65,12 +65,12 @@ setupBoard = do
         [(x,y) | x <- [-1,0,1], y <- [-2,-3]] ++
         [(x,y) | x <- [2,3], y <- [-1,0,1]] ++
         [(x,y) | x <- [-2,-3], y <- [-1,0,1]])
-    setTag Selected 0 True
+    setTag Selected 0
 
 newStone :: Integer -> Integer -> Action ()
 newStone x y = do
     stone <- new
-    setTag Stone stone True
+    setTag Stone stone
     setAttribute XPosition stone x
     setAttribute YPosition stone y
 

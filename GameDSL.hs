@@ -6,8 +6,6 @@ import Graphics.Gloss.Interface.Pure.Game
 import Control.Monad
 import Data.Map (Map)
 import qualified Data.Map as Map (lookup,keys,insert,empty,delete,adjust)
-import Data.Set (Set)
-import qualified Data.Set as Set (member,empty,delete,insert)
 import Control.Monad.State (State,execState)
 import qualified Control.Monad.State as State (get,put,modify)
 import Control.Monad.Reader
@@ -49,7 +47,7 @@ data GameState tag attribute = GameState {
     entityMap :: Map Entity (Properties tag attribute)}
 
 data Properties tag attribute = Properties {
-    propertyTags :: Set tag,
+    propertyTags :: Map tag (),
     propertyAttributes :: Map attribute Value}
 
 deriving instance (Show attribute,Show tag) => Show (Properties tag attribute)
@@ -64,22 +62,16 @@ getEntity = do
     entities <- asks entityMap
     for (Map.keys entities)
 
-getTags :: Entity -> Query tag attribute (Set tag)
+getTags :: Entity -> Query tag attribute (Map tag ())
 getTags entity = do
     entities <- asks entityMap
     properties <- lookupMZ entity entities
     return (propertyTags properties)
 
-getTag :: (Ord tag) => tag -> Entity -> Query tag attribute Bool
-getTag t entity = do
+getTag :: (Ord tag) => tag -> Entity -> Query tag attribute ()
+getTag tag entity = do
     tags <- getTags entity
-    return (Set.member t tags)
-
-entityTagged :: (Ord tag) => tag -> Query tag attribute Entity
-entityTagged t = do
-    entity <- getEntity
-    getTag t entity >>= guard
-    return entity
+    lookupMZ tag tags
 
 getAttributes :: (Ord attribute) => Entity -> Query tag attribute (Map attribute Value)
 getAttributes entity = do
@@ -92,6 +84,9 @@ getAttribute attribute entity = do
     attributes <- getAttributes entity
     lookupMZ attribute attributes
 
+entityTagged :: (Ord tag) => tag -> Query tag attribute Entity
+entityTagged tag = getEntity >>= has (getTag tag)
+
 lookupMZ :: (MonadPlus m,Ord k) => k -> Map k v -> m v
 lookupMZ k m = maybe mzero return (Map.lookup k m)
 
@@ -103,16 +98,28 @@ results :: Query tag attribute a -> Query tag attribute [a]
 results query = ReaderT (\gamestate -> do
     return (runReaderT query gamestate))
 
-no :: Query tag attribute a -> Query tag attribute ()
-no query = do
+ensure :: Query tag attribute a -> Query tag attribute ()
+ensure query = do
+    as <- results query
+    guard (not (null as))
+
+has :: (a -> Query tag attribute b) -> a -> Query tag attribute a
+has query a = do
+    ensure (query a)
+    return a
+
+ensureNot :: Query tag attribute a -> Query tag attribute ()
+ensureNot query = do
     as <- results query
     guard (null as)
 
+hasnt :: (a -> Query tag attribute b) -> a -> Query tag attribute a
+hasnt query a = do
+    ensureNot (query a)
+    return a
+
 runAction :: Action tag attribute a -> GameState tag attribute -> GameState tag attribute
 runAction = execState
-
-modifyEntity :: Entity -> (Properties tag attribute -> Properties tag attribute) -> GameState tag attribute -> GameState tag attribute
-modifyEntity entity f (GameState newentity entities) = GameState newentity (Map.adjust f entity entities)
 
 new :: Action tag attribute Entity
 new = do
@@ -121,22 +128,35 @@ new = do
     return newentity
 
 emptyProperties :: Properties tag attribute
-emptyProperties = Properties Set.empty Map.empty
+emptyProperties = Properties Map.empty Map.empty
 
 delete :: Entity -> Action tag attribute ()
 delete entity = do
     (GameState newentity entities) <- State.get
     State.put (GameState newentity (Map.delete entity entities))
 
-setTag :: (Ord tag) => tag -> Entity -> Bool -> Action tag attribute ()
-setTag t entity b = do
-    State.modify (modifyEntity entity (\(Properties ts attributes) ->
-        Properties ((if b then Set.insert else Set.delete) t ts) attributes))
+setTag :: (Ord tag) => tag -> Entity -> Action tag attribute ()
+setTag tag entity = do
+    State.modify (modifyEntity entity (\(Properties tags attributes) ->
+        Properties (Map.insert tag () tags) attributes))
+
+unsetTag :: (Ord tag) => tag -> Entity -> Action tag attribute ()
+unsetTag tag entity = do
+    State.modify (modifyEntity entity (\(Properties tags attributes) ->
+        Properties (Map.delete tag tags) attributes))
 
 setAttribute :: (Ord attribute) => attribute -> Entity -> Value -> Action tag attribute ()
 setAttribute attribute entity value = do
     State.modify (modifyEntity entity (\(Properties ts attributes) ->
         Properties ts (Map.insert attribute value attributes)))
+
+unsetAttribute :: (Ord attribute) => attribute -> Entity -> Action tag attribute ()
+unsetAttribute attribute entity = do
+    State.modify (modifyEntity entity (\(Properties tags attributes) ->
+        Properties tags (Map.delete attribute attributes)))
+
+modifyEntity :: Entity -> (Properties tag attribute -> Properties tag attribute) -> GameState tag attribute -> GameState tag attribute
+modifyEntity entity f (GameState newentity entities) = GameState newentity (Map.adjust f entity entities)
 
 type RunState tag attribute = ([Element tag attribute],GameState tag attribute)
 
