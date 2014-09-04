@@ -1,10 +1,12 @@
 {-# LANGUAGE StandaloneDeriving,DeriveFunctor #-}
 module Main where
 
-import GameDSL hiding (Rule,Action,Element,render)
-import qualified GameDSL as GameDSL (Rule,Action,Element)
+import GameDSL hiding (Rule,Query,Action,Element,render)
+import qualified GameDSL as GameDSL (Rule,Action,Query,Element)
 
 import Graphics.Gloss
+
+import Control.Monad (guard)
 
 data Tag = Enemy | Site | Turret | Bullet | North | South | East | West
 
@@ -19,14 +21,15 @@ deriving instance Ord Attribute
 deriving instance Show Attribute
 
 type Rule = GameDSL.Rule Tag Attribute
+type Query = GameDSL.Query Tag Attribute
 type Action = GameDSL.Action Tag Attribute
 type Element = GameDSL.Element Tag Attribute
 
 setupBoard :: Action ()
 setupBoard = do
     sequence_ (do
-        x <- [-20..0]
-        y <- [-2..2]
+        x <- [-40 .. -20]
+        y <- [-2 .. 2]
         return (newEnemy x y))
     sequence_ (do
         x <- [-9,-6..9]
@@ -95,6 +98,24 @@ fire = do
         else do
             setAttribute Reload turret (reload - 1))))
 
+hit :: Rule
+hit = do
+    bullet <- entityTagged Bullet
+    (bx,by) <- getXY bullet
+    enemy <- entityTagged Enemy
+    (ex,ey) <- getXY enemy
+    guard (bx == ex)
+    guard (by == ey)
+    return (trigger (tick (do
+        delete bullet
+        delete enemy)))
+
+getXY :: Entity -> Query (Value,Value)
+getXY entity = do
+    x <- getAttribute XPosition entity
+    y <- getAttribute YPosition entity
+    return (x,y)
+
 newBullet :: Tag -> Value -> Value -> Action ()
 newBullet direction x y = do
     bullet <- new
@@ -135,7 +156,7 @@ renderBullet :: Rule
 renderBullet = render Bullet (\x y ->
     translate x y (
         color black (
-            circleSolid (0.5 * fieldSize))))
+            circleSolid (0.3 * fieldSize))))
 
 siteSize :: Float
 siteSize = 3 * fieldSize
@@ -150,4 +171,4 @@ fieldCoordinate :: Integer -> Float
 fieldCoordinate x = fromIntegral x * fieldSize
 
 main :: IO ()
-main = runGame setupBoard [renderEnemy,renderSite,renderTurret,renderBullet,build,fire,move]
+main = runGame setupBoard [renderEnemy,renderSite,renderTurret,renderBullet,hit,build,fire,move]
