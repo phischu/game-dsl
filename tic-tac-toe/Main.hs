@@ -45,10 +45,10 @@ setStone = do
     turn <- entityTagged Turn
     player <- for [X,O]
     ensure (getTag player turn)
-    return (trigger (fieldRect x y) (do
+    return (trigger (clickInRect (fieldRect x y) (do
         setTag player field
         unsetTag player turn
-        setTag (other player) turn))
+        setTag (other player) turn)))
 
 other :: Tag -> Tag
 other X = O
@@ -81,8 +81,8 @@ renderO = do
 cross :: Picture
 cross = pictures [rotate degrees (rectangleSolid 60 15) | degrees <- [-45,45]]
 
-fieldRect :: Integer -> Integer -> Trigger
-fieldRect x y = ClickableRect (fieldCoordinate x) (fieldCoordinate y) 60 60
+fieldRect :: Integer -> Integer -> Rect
+fieldRect x y = Rect (fieldCoordinate x) (fieldCoordinate y) 60 60
 
 fieldCoordinate :: Integer -> Float
 fieldCoordinate x = fromIntegral x * 60

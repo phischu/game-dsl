@@ -33,10 +33,10 @@ move = do
         (tx,ty) = (nx + dx, ny + dy)
     other <- stoneAt nx ny
     ensureNot (stoneAt tx ty)
-    return (trigger (fieldRect tx ty) (do
+    return (trigger (clickInRect (fieldRect tx ty) (do
         delete other
         setAttribute XPosition selected tx
-        setAttribute YPosition selected ty))
+        setAttribute YPosition selected ty)))
 
 stoneAt :: Integer -> Integer -> Query Tag Attribute Entity
 stoneAt x y = do
@@ -53,9 +53,9 @@ select = do
     x <- getAttribute XPosition stone
     y <- getAttribute YPosition stone
     selected <- entityTagged Selected
-    return (trigger (fieldRect x y) (do
+    return (trigger (clickInRect (fieldRect x y) (do
         unsetTag Selected selected
-        setTag Selected stone))
+        setTag Selected stone)))
 
 setupBoard :: Action ()
 setupBoard = do
@@ -89,8 +89,8 @@ renderSelected = do
     y <- getAttribute YPosition selected
     return (draw (translate (fieldCoordinate x) (fieldCoordinate y) (color red (circleSolid 18))))
 
-fieldRect :: Integer -> Integer -> Trigger
-fieldRect x y = ClickableRect (fieldCoordinate x) (fieldCoordinate y) 40 40
+fieldRect :: Integer -> Integer -> Rect
+fieldRect x y = Rect (fieldCoordinate x) (fieldCoordinate y) 40 40
 
 fieldCoordinate :: Integer -> Float
 fieldCoordinate x = fromIntegral x * 40

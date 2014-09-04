@@ -18,14 +18,18 @@ type Action tag attribute = State (GameState tag attribute)
 
 data Element tag attribute = Element {
     elementPicture :: Picture,
-    elementTrigger :: Trigger,
-    elementAction :: Action tag attribute ()}
+    elementAction :: Trigger -> Action tag attribute ()}
 
 draw :: Picture -> Element tag attribute
-draw picture = Element picture NoTrigger (return ())
+draw picture = Element picture (const (return ()))
 
-trigger :: Trigger -> (Action tag attribute ()) -> Element tag attribute
-trigger tr action = Element blank tr action
+trigger :: (Trigger -> Action tag attribute ()) -> Element tag attribute
+trigger action = Element blank action
+
+clickInRect :: Rect -> Action tag attribute () -> Trigger -> Action tag attribute ()
+clickInRect (Rect mx my w h) action (Click x y)
+    | x < mx + 0.5*w && x > mx - 0.5*w && y < my + 0.5*h && y > my - 0.5*h = action
+    | otherwise = return ()
 
 type Rule tag attribute = Query tag attribute (Element tag attribute)
 
@@ -34,13 +38,14 @@ type Entity = Integer
 type Value = Integer
 
 data Trigger =
-    NoTrigger |
-    ClickableRect Float Float Float Float
+    Click Float Float
+
+data Rect = Rect Float Float Float Float
 
 deriving instance Show Trigger
 
 instance Show (Element tag attribute) where
-    show (Element tr _ _) = show tr
+    show (Element tr _) = show tr
 
 data GameState tag attribute = GameState {
     newEntity :: Entity,
@@ -182,14 +187,6 @@ render :: [Element tag attribute] -> Picture
 render = pictures . map elementPicture
 
 handle :: [Rule tag attribute] -> Event -> RunState tag attribute -> RunState tag attribute
-handle actions (EventKey (MouseButton _) _ _ (x,y)) (clickables,gamestate) = case filterInside x y clickables of
-    [] -> (clickables,gamestate)
-    (effect:_) -> run effect actions gamestate
+handle rules (EventKey (MouseButton _) _ _ (x,y)) (elements,gamestate) = run actions rules gamestate where
+    actions = forM_ elements (\(Element _ action) -> action (Click x y))
 handle _ _ (clickables,gamestate) = (clickables,gamestate)
-
-filterInside :: Float -> Float -> [Element tag attribute] -> [Action tag attribute ()]
-filterInside x y clickables = do
-    Element _ (ClickableRect mx my w h) action <- clickables
-    guard (x < mx + 0.5*w && x > mx - 0.5*w)
-    guard (y < my + 0.5*h && y > my - 0.5*h)
-    return action
