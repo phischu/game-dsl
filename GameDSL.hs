@@ -30,6 +30,11 @@ clickInRect :: Rect -> Action tag attribute () -> Trigger -> Action tag attribut
 clickInRect (Rect mx my w h) action (Click x y)
     | x < mx + 0.5*w && x > mx - 0.5*w && y < my + 0.5*h && y > my - 0.5*h = action
     | otherwise = return ()
+clickInRect _ _ _ = return ()
+
+tick :: Action tag attribute () -> Trigger -> Action tag attribute ()
+tick action Tick = action
+tick _ _ = return ()
 
 type Rule tag attribute = Query tag attribute (Element tag attribute)
 
@@ -38,7 +43,8 @@ type Entity = Integer
 type Value = Integer
 
 data Trigger =
-    Click Float Float
+    Click Float Float |
+    Tick
 
 data Rect = Rect Float Float Float Float
 
@@ -173,7 +179,7 @@ runGame setup rules = play
     (run setup rules emptyGameState)
     (render . fst)
     (handle rules)
-    (const id)
+    (step rules)
 
 emptyGameState :: GameState tag attribute
 emptyGameState = GameState 0 Map.empty
@@ -190,3 +196,7 @@ handle :: [Rule tag attribute] -> Event -> RunState tag attribute -> RunState ta
 handle rules (EventKey (MouseButton _) _ _ (x,y)) (elements,gamestate) = run actions rules gamestate where
     actions = forM_ elements (\(Element _ action) -> action (Click x y))
 handle _ _ (clickables,gamestate) = (clickables,gamestate)
+
+step :: [Rule tag attribute] -> Float -> RunState tag attribute -> RunState tag attribute
+step rules _ (elements,gamestate) = run actions rules gamestate where
+    actions = forM_ elements (\(Element _ action) -> action Tick)
