@@ -196,7 +196,7 @@ render :: [Element tag attribute] -> Picture
 render = pictures . map elementPicture
 
 handle :: [Rule tag attribute] -> Event -> RunState tag attribute -> RunState tag attribute
-handle rules (EventKey (MouseButton _) _ _ (x,y)) (elements,gamestate) = run actions rules gamestate where
+handle rules (EventKey (MouseButton _) Down _ (x,y)) (elements,gamestate) = run actions rules gamestate where
     actions = forM_ elements (\(Element _ action) -> action (Click x y))
 handle _ _ (clickables,gamestate) = (clickables,gamestate)
 

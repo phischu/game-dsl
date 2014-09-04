@@ -6,9 +6,9 @@ import qualified GameDSL as GameDSL (Rule,Action,Query,Element)
 
 import Graphics.Gloss
 
-import Control.Monad (guard)
+import Control.Monad (guard,forM_)
 
-data Tag = Enemy | Site | Turret | Bullet | North | South | East | West
+data Tag = Enemy | Site | Turret | Launcher | Bullet | Rocket | North | South | East | West
 
 deriving instance Eq Tag
 deriving instance Ord Tag
@@ -83,18 +83,28 @@ build = do
         setTag Turret site
         setAttribute Reload site 0)))
 
+upgrade :: Rule
+upgrade = do
+    turret <- entityTagged Turret
+    (x,y) <- getXY turret
+    ensureNot (getTag Launcher turret)
+    return (trigger (clickInRect (Rect (fieldCoordinate x) (fieldCoordinate y) siteSize siteSize) (do
+        setTag Launcher turret)))
+
 fire :: Rule
 fire = do
     turret <- entityTagged Turret
-    x <- getAttribute XPosition turret
-    y <- getAttribute YPosition turret
+    (x,y) <- getXY turret
     direction <- for [North,South]
     ensure (getTag direction turret)
     reload <- getAttribute Reload turret
+    isLauncher <- results (getTag Launcher turret) >>= return . not . null
     return (trigger (tick (if reload <= 0
         then do
             setAttribute Reload turret reloadTime
-            newBullet direction x y
+            if isLauncher
+                then newShot Rocket 10 direction x y
+                else newShot Bullet 5 direction x y
         else do
             setAttribute Reload turret (reload - 1))))
 
@@ -110,53 +120,67 @@ hit = do
         delete bullet
         delete enemy)))
 
+explode :: Rule
+explode = do
+    rocket <- entityTagged Rocket
+    (rx,ry) <- getXY rocket
+    enemy <- entityTagged Enemy
+    (ex,ey) <- getXY enemy
+    guard (rx == ex)
+    guard (ry == ey)
+    enemies <- results (do
+        enemy' <- entityTagged Enemy
+        (ex',ey') <- getXY enemy'
+        guard (abs (rx - ex') < 2)
+        guard (abs (ry - ey') < 2)
+        return enemy')
+    return (trigger (tick (do
+        delete rocket
+        forM_ enemies delete)))
+
 getXY :: Entity -> Query (Value,Value)
 getXY entity = do
     x <- getAttribute XPosition entity
     y <- getAttribute YPosition entity
     return (x,y)
 
-newBullet :: Tag -> Value -> Value -> Action ()
-newBullet direction x y = do
+newShot :: Tag -> Value -> Tag -> Value -> Value -> Action ()
+newShot tag movetime direction x y = do
     bullet <- new
-    setTag Bullet bullet
+    setTag tag bullet
     setAttribute XPosition bullet x
     setAttribute YPosition bullet y
     setTag direction bullet
-    setAttribute MoveTime bullet 5
+    setAttribute MoveTime bullet movetime
     setAttribute MoveCounter bullet 0
 
 reloadTime :: Value
-reloadTime = 40
+reloadTime = 100
 
-render :: Tag -> (Float -> Float -> Picture) -> Rule
+render :: Tag -> Picture -> Rule
 render tag pic = do
     entity <- entityTagged tag
     x <- getAttribute XPosition entity
     y <- getAttribute YPosition entity
-    return (draw (pic (fieldCoordinate x) (fieldCoordinate y)))
+    return (draw (translate (fieldCoordinate x) (fieldCoordinate y) pic))
 
 renderEnemy :: Rule
-renderEnemy = render Enemy (\x y -> 
-    color green (
-        translate x y (
-            rectangleSolid (fieldSize - 2) (fieldSize - 2))))
+renderEnemy = render Enemy (color green (rectangleSolid (fieldSize - 2) (fieldSize - 2)))
 
 renderSite :: Rule
-renderSite = render Site (\x y ->
-    translate x y (rectangleWire siteSize siteSize))
+renderSite = render Site (rectangleWire siteSize siteSize)
 
 renderTurret :: Rule
-renderTurret = render Turret (\x y ->
-    translate x y (
-            color blue (
-                circleSolid (0.5 * siteSize))))
+renderTurret = render Turret (color blue (circleSolid (0.3 * siteSize)))
+
+renderLauncher :: Rule
+renderLauncher = render Launcher (color orange (rectangleWire siteSize (0.1 * siteSize)))
 
 renderBullet :: Rule
-renderBullet = render Bullet (\x y ->
-    translate x y (
-        color black (
-            circleSolid (0.3 * fieldSize))))
+renderBullet = render Bullet (color black (circleSolid (0.3 * fieldSize)))
+
+renderRocket :: Rule
+renderRocket = render Rocket (color black (circleSolid (0.6 * fieldSize)))
 
 siteSize :: Float
 siteSize = 3 * fieldSize
@@ -171,4 +195,6 @@ fieldCoordinate :: Integer -> Float
 fieldCoordinate x = fromIntegral x * fieldSize
 
 main :: IO ()
-main = runGame setupBoard [renderEnemy,renderSite,renderTurret,renderBullet,hit,build,fire,move]
+main = runGame setupBoard [
+    renderEnemy,renderBullet,renderRocket,renderSite,renderTurret,renderLauncher,
+    hit,build,upgrade,fire,move,explode]
