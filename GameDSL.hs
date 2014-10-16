@@ -178,7 +178,7 @@ runGame :: Action tag attribute () -> [Rule tag attribute] -> IO ()
 runGame setup rules = play
     (InWindow "Game DSL" (500,500) (200,200))
     white
-    40
+    50
     (run setup rules emptyGameState)
     (render . fst)
     (handle rules)
